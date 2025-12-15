@@ -8,16 +8,18 @@ from simple_pid import PID
 ### GLOBAL PARAMETERS ###
 BAUD = 9600
 U_MAX = 12.0
+
+
 ###
 
 ### LOGIC ###
 
-#setup
+# setup
 def check_serial_port(port: str) -> bool:
     """
     Docstring for check_serial_port
     Checks if given serial port exists in the system.
-    
+
     :param port: Opis
     :type port: str
     :return: Opis
@@ -27,11 +29,12 @@ def check_serial_port(port: str) -> bool:
     print("[INFO] Available ports:", available_ports)
     return port in available_ports
 
+
 def setup_arduino(port: str, baud=BAUD, timeout=1):
     """
     Docstring for setup_arduino
     Sets up Arduino serial connection with port validation.
-    
+
     :param port: Opis
     :type port: str
     :param baud: Opis
@@ -47,11 +50,12 @@ def setup_arduino(port: str, baud=BAUD, timeout=1):
     except serial.SerialException as e:
         raise RuntimeError(f"[ERROR] Failed to open Arduino port {port}: {e}")
 
+
 def setup_power_supp(port: str, baud=BAUD, timeout=1):
     """
     Docstring for setup_power_supp
     Sets up power supply serial connection with port validation.
-    
+
     :param port: Opis
     :type port: str
     :param baud: Opis
@@ -67,24 +71,26 @@ def setup_power_supp(port: str, baud=BAUD, timeout=1):
     except serial.SerialException as e:
         raise RuntimeError(f"[ERROR] Failed to open power supply port {port}: {e}")
 
+
 def close_port_connection(ser):
     """
     Docstring for close_port_connection
-    
+
     :param ser: Opis
     """
     if ser and ser.is_open:
         ser.close()
         print("[INFO] Port closed.")
-#
 
+
+#
 
 
 def set_temp_level(T_min=0.0, T_max=100.0) -> float:
     """
     Docstring for set_temp_level
     Reads temperature setpoint from console with validation.
-    
+
     :param T_min: Opis
     :param T_max: Opis
     :return: Opis
@@ -100,12 +106,12 @@ def set_temp_level(T_min=0.0, T_max=100.0) -> float:
             print("[ERROR] Invalid number")
 
 
-def read_temp(ser) -> float | None:
+def read_temp(ser):
     """
     Docstring for read_temp
     Reads temperature from Arduino via serial.
     Returns None if no valid data.
-    
+
     :param ser: Opis
     :return: Opis
     :rtype: float | None
@@ -121,11 +127,10 @@ def read_temp(ser) -> float | None:
         return None
 
 
-
 def set_power(ser, power: float):
     """
     Docstring for set_power
-    
+
     :param ser: sereial for power supply
     :param power: value from 0 - 1; 1 -> u_max, 0 -> u=0 [V]
     :type power: float
@@ -135,10 +140,10 @@ def set_power(ser, power: float):
     cmd = f"VOLT {voltage:.2f}\n"
     ser.write(cmd.encode())
 
-def read_power(ser) -> float | None:
+def read_power(ser):
     """
     Docstring for read_power
-    
+
     :param ser: serial for power supply
     :return: volts on power supply
     :rtype: float | None
@@ -153,16 +158,16 @@ def read_power(ser) -> float | None:
 
 
 def autotune_pid_step_response(
-    ser_arduino,
-    ser_psu,
-    power_step: float = 0.3,
-    sample_time: float = 1.0,
-    duration: float = 600.0,
-    T_max: float = 80.0,
+        ser_arduino,
+        ser_psu,
+        power_step: float = 0.3,
+        sample_time: float = 1.0,
+        duration: float = 600.0,
+        T_max: float = 80.0,
 ):
     """
     Docstring for autotune_pid_step_response
-    
+
     :param ser_arduino: Opis
     :param ser_psu: Opis
     :param power_step: Opis
@@ -239,10 +244,9 @@ def autotune_pid_step_response(
 
 
 def pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set):
-
     """
     Docstring for pid_function
-    
+
     :param ser_arduino: Opis
     :param ser_psu: Opis
     :param Kp: Opis
@@ -262,7 +266,7 @@ def pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set):
                 continue
             power = pid(temp)
             set_power(ser_psu, power)
-            print(f"T={temp:.2f} °C | P={power:.2f}") 
+            print(f"T={temp:.2f} °C | P={power:.2f}")
             t = time.time() - t0
             plotter.update(t, temp, power)
             time.sleep(0.2)
@@ -270,6 +274,8 @@ def pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set):
         print("[INFO] PID stopped by user")
     finally:
         plotter.close()
+
+
 ###
 
 ### PLOTTING ###
@@ -278,22 +284,26 @@ class Plotter:
     """
     Docstring for Plotter
     """
-    def __innit__(self, T_set=None):
+
+    def __init__(self, T_set=None):
+
+        self.T_set = T_set
         plt.ion()
+
 
         self.temp = []
         self.power = []
         self.time = []
-        
+
         self.fig, self.ax_temp = plt.subplots()
         self.ax_power = self.ax_temp.twinx()
 
-        self.line_temp = self.ax_temp_plot([], [], label="Temperture [° C]")
-        self.line_power = self.ax_power_plot([], [], label="Power (0-1)")
+        self.line_temp = self.ax_temp.plot([], [], label="Temperture [° C]")
+        self.line_power = self.ax_power.plot([], [], label="Power (0-1)")
 
         if T_set is not None:
             self.ax_temp.axhline(T_set, linestyle="--", label="T_set")
-        
+
         self.ax_temp.set_xlabel("Time [s]")
         self.ax_temp.set_ylabel("Temperature [°C]")
         self.ax_power.set_ylabel("Power (0-1)")
@@ -303,40 +313,32 @@ class Plotter:
 
         self.ax_temp.grid()
 
-        def update(self, t, temp, power):
-            self.time.append(t)
-            self.temp.append(temp)
-            self.power.append(power)
+    def update(self, t, temp, power):
+        self.time.append(t)
+        self.temp.append(temp)
+        self.power.append(power)
 
-            self.line_temp.set_data(self.time, self.temp)
-            self.line_poewr.set_data(self.time, self.power)
+        self.line_temp.set_data(self.time, self.temp)
+        self.line_power.set_data(self.time, self.power)
 
-            self.ax_temp.relim()
-            self.ax_power.autoscale_view()
+        self.ax_temp.relim()
+        self.ax_power.autoscale_view()
 
-            plt.pause(0.05)
+        plt.pause(0.05)
 
-        def close(self):
-            plt.ioff()
-            plt.show()
+    def close(self):
+        plt.ioff()
+        plt.show()
+
 
 ###
 
 
-
-
-
-
 def main():
-
-    
-
-    ARDUINO_PORT = "COM16"
+    ARDUINO_PORT = "COM12"
     check_serial_port(ARDUINO_PORT)
     PSU_PORT = "COM15"
     check_serial_port(PSU_PORT)
-
-    
 
     try:
         ser_arduino = setup_arduino(ARDUINO_PORT)
@@ -344,17 +346,18 @@ def main():
 
         T_set = set_temp_level()
 
-        #autotuning 
+        # autotuning
         use_atuotune = input("Run PID autotuning? [y/n]:").lower() == "y"
         if use_atuotune:
             print("[INFO] Running PID autotunning...")
-            Kp, Ki, Kd = autotune_pid_step_response(ser_arduino, ser_psu, power_step=0.3, duration=600, T_max = T_set+10)
+            Kp, Ki, Kd = autotune_pid_step_response(ser_arduino, ser_psu, power_step=0.3, duration=600,
+                                                    T_max=T_set + 10)
             print(f"[INFO] Autotune results: Kp={Kp:.3f}, Ki={Ki:.3f}, Kd={Kd:.3f}")
         else:
-            # default values 
+            # default values
             Kp = 0.5
             Ki = 0.05
-            Kd = 0.0 
+            Kd = 0.0
 
         print("[INFO] PID loop starting...")
         pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set)
@@ -371,17 +374,13 @@ def main():
             set_power(ser_psu, 0)
         except Exception:
             pass
-        
+
         close_port_connection(ser_arduino)
         close_port_connection(ser_psu)
         print("[INFO] Power off. Ports closed.")
 
 
-
-
-
-
-
 if __name__ == "__main__":
     main()
 
+# See PyCharm help at https://www.jetbrains.com/help/pycharm/
