@@ -23,43 +23,47 @@
 
 #include <7semi_DS18B20.h>
 
-DS18B20_7semi sensor(2);  // data pin 2
+DS18B20_7semi sensor(2);
+
+uint8_t addr[8];
+bool fanState = false;   // zapamiętany stan wiatraka
 
 void setup() {
   Serial.begin(9600);
+
   if (!sensor.begin()) {
-    Serial.println("No DS18B20 found!");
-    while (1)
-      ;
+    Serial.println("ERROR: DS18B20 not found");
+    while (1);
   }
-  uint8_t count = sensor.searchDevices();
-  Serial.print("Found devices: ");
-  Serial.println(count);
+
+  sensor.searchDevices();
 
   pinMode(10, OUTPUT);
-  
+  digitalWrite(10, LOW); // wiatrak startowo OFF
 }
 
 void loop() {
-  int fan = 0;
-  uint8_t addr[8];
+  // ---- 1. Odczyt temperatury ----
   if (sensor.getAddress(0, addr)) {
-    float t = sensor.readTemperature(addr);
-    //serial.print("Temp C: ");
-    Serial.println(t);
+    float temp = sensor.readTemperature(addr);
+    Serial.print("T:");
+    Serial.println(temp);   // np. T:23.56
   }
 
-  if(Serial.available() > 0){
-    fan = Serial.parseInt();
+  // ---- 2. Odbiór komendy z PC ----
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
 
-    
+    if (cmd == "F1") {
+      fanState = true;
+    } 
+    else if (cmd == "F0") {
+      fanState = false;
+    }
   }
-Serial.println(fan);
-    if (fan == 1) {
-      digitalWrite(10, HIGH);
-    }
-    else {
-      digitalWrite(10, LOW);
-    }
+
+  // ---- 3. Sterowanie wiatrakiem ----
+  digitalWrite(10, fanState ? HIGH : LOW);
+
   delay(1000);
 }
