@@ -7,7 +7,8 @@ from simple_pid import PID
 
 ### GLOBAL PARAMETERS ###
 BAUD = 9600
-U_MAX = 12.0
+U_MAX = 12.00
+I_MAX = 2.8 #A
 
 
 ###
@@ -67,6 +68,9 @@ def setup_power_supp(port: str, baud=BAUD, timeout=1):
     try:
         ser = serial.Serial(port=port, baudrate=baud, timeout=timeout)
         print(f"[INFO] Power supply connected on {port}")
+        ser.write((f"VSET1:{U_max}" + "\n").encode())
+        ser.write((f"ISET1:{I_max}" + "\n").encode())
+
         return ser
     except serial.SerialException as e:
         raise RuntimeError(f"[ERROR] Failed to open power supply port {port}: {e}")
@@ -136,9 +140,17 @@ def set_power(ser, power: float):
     :type power: float
     """
     power = max(0.0, min(1.0, power))
-    voltage = power * U_MAX
-    cmd = f"VOLT {voltage:.2f}\n"
-    ser.write(cmd.encode())
+    current = power * I_MAX
+    current = round(current, 2)
+    cmd = f"ISET1:{current}"
+    ser.write((cmd + "\n").encode())
+    time.sleep(0.05)
+    ser.write(("OUT1" + "\n").encode())
+    time.sleep(0.05)
+
+
+
+
 
 def read_power(ser):
     """
@@ -148,7 +160,7 @@ def read_power(ser):
     :return: volts on power supply
     :rtype: float | None
     """
-    ser.write(b"READ?\n")
+
     try:
         line = ser.readline().decode().strip()
         return float(line)
@@ -243,7 +255,7 @@ def autotune_pid_step_response(
     return Kp, Ki, Kd
 
 
-def pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set):
+def pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set, logger):
     """
     Docstring for pid_function
 
@@ -268,8 +280,8 @@ def pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set):
             set_power(ser_psu, power)
             print(f"T={temp:.2f} °C | P={power:.2f}")
             t = time.time() - t0
+            logger.add(t, temp, power)
             plotter.update(t, temp, power)
-            time.sleep(0.2)
     except KeyboardInterrupt:
         print("[INFO] PID stopped by user")
     finally:
@@ -286,10 +298,8 @@ class Plotter:
     """
 
     def __init__(self, T_set=None):
-
         self.T_set = T_set
         plt.ion()
-
 
         self.temp = []
         self.power = []
@@ -298,8 +308,8 @@ class Plotter:
         self.fig, self.ax_temp = plt.subplots()
         self.ax_power = self.ax_temp.twinx()
 
-        self.line_temp = self.ax_temp.plot([], [], label="Temperture [° C]")
-        self.line_power = self.ax_power.plot([], [], label="Power (0-1)")
+        self.line_temp, = self.ax_temp.plot([], [], label="Temperture [° C]")
+        self.line_power, = self.ax_power.plot([], [], label="Power (0-1)")
 
         if T_set is not None:
             self.ax_temp.axhline(T_set, linestyle="--", label="T_set")
@@ -333,6 +343,36 @@ class Plotter:
 
 ###
 
+### COLLECTING DATA ###
+
+class DataLogger:
+    """
+    Docstring for DataLogger
+    """
+
+    def __init__(self):
+        self.time_log = []
+        self.temp_log = []
+        self.power_log = []
+
+    def add(self, time, temp, power):
+        self.time_log.append(time)
+        self.temp_log.append(temp)
+        self.power_log.append(power)
+
+    def clear(self):
+        self.time_log.clear()
+        self.temp_log.clear()
+        self.power_log.clear()
+
+    def save_csv(self, filename):
+        import csv
+        with open(filename, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["time_s", "temperature_C", "power_0_1"])
+            for row in zip(self.time_log, self.temp_log, self.power_log):
+                writer.writerow(row)
+
 
 def main():
     ARDUINO_PORT = "COM12"
@@ -355,12 +395,14 @@ def main():
             print(f"[INFO] Autotune results: Kp={Kp:.3f}, Ki={Ki:.3f}, Kd={Kd:.3f}")
         else:
             # default values
-            Kp = 0.5
-            Ki = 0.05
-            Kd = 0.0
+            Kp = -0.5
+            Ki = -0.05
+            Kd = -0.0
 
         print("[INFO] PID loop starting...")
-        pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set)
+        print("[INFO] Initializing Data logger...")
+        logger = DataLogger()
+        pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set, logger)
 
 
     except KeyboardInterrupt:
@@ -372,15 +414,17 @@ def main():
     finally:
         try:
             set_power(ser_psu, 0)
+            ser_psu.write(("OUT0" + "\n").encode())
         except Exception:
             pass
 
         close_port_connection(ser_arduino)
         close_port_connection(ser_psu)
         print("[INFO] Power off. Ports closed.")
+        logger.clear()
+        print("[INFO] Data logger cleared.")
 
 
 if __name__ == "__main__":
     main()
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
