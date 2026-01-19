@@ -68,8 +68,6 @@ def setup_power_supp(port: str, baud=BAUD, timeout=1):
     try:
         ser = serial.Serial(port=port, baudrate=baud, timeout=timeout)
         print(f"[INFO] Power supply connected on {port}")
-        ser.write((f"VSET1:{U_max}" + "\n").encode())
-        ser.write((f"ISET1:{I_max}" + "\n").encode())
 
         return ser
     except serial.SerialException as e:
@@ -140,9 +138,12 @@ def set_power(ser, power: float):
     :type power: float
     """
     power = max(0.0, min(1.0, power))
-    current = power * I_MAX
+    current = I_MAX
+    voltage = power * U_max
     current = round(current, 2)
     cmd = f"ISET1:{current}"
+    ser.write((cmd + "\n").encode())
+    cmd = f"VSET1:{voltage}"
     ser.write((cmd + "\n").encode())
     time.sleep(0.05)
     ser.write(("OUT1" + "\n").encode())
