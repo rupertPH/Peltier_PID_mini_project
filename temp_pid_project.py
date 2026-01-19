@@ -68,7 +68,6 @@ def setup_power_supp(port: str, baud=BAUD, timeout=1):
     try:
         ser = serial.Serial(port=port, baudrate=baud, timeout=timeout)
         print(f"[INFO] Power supply connected on {port}")
-
         return ser
     except serial.SerialException as e:
         raise RuntimeError(f"[ERROR] Failed to open power supply port {port}: {e}")
@@ -139,10 +138,11 @@ def set_power(ser, power: float):
     """
     power = max(0.0, min(1.0, power))
     current = I_MAX
-    voltage = power * U_max
     current = round(current, 2)
+    voltage = round(power*U_MAX,2)
     cmd = f"ISET1:{current}"
     ser.write((cmd + "\n").encode())
+    time.sleep(0.05)
     cmd = f"VSET1:{voltage}"
     ser.write((cmd + "\n").encode())
     time.sleep(0.05)
@@ -207,7 +207,7 @@ def autotune_pid_step_response(
         if temp is None:
             continue
 
-        if temp > T_max:
+        if temp < T_max:
             set_power(ser_psu, 0.0)
             raise RuntimeError("[SAFETY] Temperature exceeded T_max")
 
@@ -225,14 +225,14 @@ def autotune_pid_step_response(
     Tend = T[-1]
     dT = Tend - T0
 
-    if dT <= 0:
+    if dT >= 0:
         raise RuntimeError("[ERROR] Invalid step response (no temperature rise)")
 
     K = dT / power_step
     T63 = T0 + 0.63 * dT
 
-    L = t[np.where(T > T0 + 0.05 * dT)][0]
-    T63_time = t[np.where(T > T63)][0]
+    L = t[np.where(T < T0 + 0.05 * dT)][0]
+    T63_time = t[np.where(T < T63)][0]
     Tau = T63_time - L
 
     # --- 4. Cohen-Coon tuning ---
@@ -303,37 +303,37 @@ class Plotter:
         plt.ion()
 
         self.temp = []
-        self.power = []
+        #self.power = []
         self.time = []
 
         self.fig, self.ax_temp = plt.subplots()
-        self.ax_power = self.ax_temp.twinx()
+        #self.ax_power = self.ax_temp.twinx()
 
         self.line_temp, = self.ax_temp.plot([], [], label="Temperture [° C]")
-        self.line_power, = self.ax_power.plot([], [], label="Power (0-1)")
+        #self.line_power, = self.ax_power.plot([], [], label="Power (0-1)")
 
         if T_set is not None:
             self.ax_temp.axhline(T_set, linestyle="--", label="T_set")
 
         self.ax_temp.set_xlabel("Time [s]")
         self.ax_temp.set_ylabel("Temperature [°C]")
-        self.ax_power.set_ylabel("Power (0-1)")
+        #self.ax_power.set_ylabel("Power (0-1)")
 
-        self.ax_temp.legend(loc="upper left")
-        self.ax_power.legend(loc="upper right")
+        self.ax_temp.legend(loc="upper right")
+        #self.ax_power.legend(loc="upper right")
 
         self.ax_temp.grid()
 
     def update(self, t, temp, power):
         self.time.append(t)
         self.temp.append(temp)
-        self.power.append(power)
+        #self.power.append(power)
 
         self.line_temp.set_data(self.time, self.temp)
-        self.line_power.set_data(self.time, self.power)
+        #self.line_power.set_data(self.time, self.power)
 
         self.ax_temp.relim()
-        self.ax_power.autoscale_view()
+        self.ax_temp.autoscale_view()
 
         plt.pause(0.05)
 
@@ -396,9 +396,9 @@ def main():
             print(f"[INFO] Autotune results: Kp={Kp:.3f}, Ki={Ki:.3f}, Kd={Kd:.3f}")
         else:
             # default values
-            Kp = -0.5
-            Ki = -0.05
-            Kd = -0.0
+            Kp = -0.7
+            Ki = -0.2
+            Kd = -0.1
 
         print("[INFO] PID loop starting...")
         print("[INFO] Initializing Data logger...")
