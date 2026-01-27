@@ -13,19 +13,14 @@ U_MAX = 12.0
 I_MAX = 4.8
 
 
-###
-
-### LOGIC ###
-
 # setup
 def check_serial_port(port: str) -> bool:
     """
-    Docstring for check_serial_port
     Checks if given serial port exists in the system.
 
-    :param port: Opis
+    :param port: Port to be checked
     :type port: str
-    :return: Opis
+    :return: List of available ports
     :rtype: bool
     """
     available_ports = [p.device for p in list_ports.comports()]
@@ -35,13 +30,12 @@ def check_serial_port(port: str) -> bool:
 
 def setup_arduino(port: str, baud=BAUD, timeout=1):
     """
-    Docstring for setup_arduino
     Sets up Arduino serial connection with port validation.
 
-    :param port: Opis
+    :param port: Port with arudino
     :type port: str
-    :param baud: Opis
-    :param timeout: Opis
+    :param baud: Rate in symbols per second
+    :param timeout: Reading data timeout
     """
     if not check_serial_port(port):
         raise RuntimeError(f"[ERROR] Arduino port '{port}' not found")
@@ -56,7 +50,6 @@ def setup_arduino(port: str, baud=BAUD, timeout=1):
 
 def setup_power_supp(port: str, baud=BAUD, timeout=1):
     """
-    Docstring for setup_power_supp
     Sets up power supply serial connection with port validation.
 
     :param port: Opis
@@ -77,45 +70,21 @@ def setup_power_supp(port: str, baud=BAUD, timeout=1):
 
 def close_port_connection(ser):
     """
-    Docstring for close_port_connection
+    Closes serial connections saftely
 
-    :param ser: Opis
+    :param ser: Port to be closed
     """
     if ser and ser.is_open:
         ser.close()
         print("[INFO] Port closed.")
 
-
-#
-
-
-def set_temp_level(T_min, T_max, value) -> float:
-    """
-    Docstring for set_temp_level
-    Reads temperature setpoint from console with validation.
-
-    :param T_min: Opis
-    :param T_max: Opis
-    :return: Opis
-    :rtype: float
-    """
-    while True:
-        try:
-            if T_min <= value <= T_max:
-                return value
-            print(f"[ERROR] Temperature must be in range {T_min}-{T_max} °C")
-        except ValueError:
-            print("[ERROR] Invalid number")
-
-
 def read_temp(ser):
     """
-    Docstring for read_temp
     Reads temperature from Arduino via serial.
     Returns None if no valid data.
 
-    :param ser: Opis
-    :return: Opis
+    :param ser: Port with Arduino
+    :return: Temp. value from termometer connected to Arduino / None if data is invalid
     :rtype: float | None
     """
     if ser.in_waiting == 0:
@@ -131,10 +100,10 @@ def read_temp(ser):
 
 def set_power(ser, power: float):
     """
-    Docstring for set_power
+    Sets power (voltage and current) of programmable power supply connected to Peltier element
 
-    :param ser: sereial for power supply
-    :param power: value from 0 - 1; 1 -> u_max, 0 -> u=0 [V]
+    :param ser: Sereial for power supply
+    :param power: value from 0 - 1; 1 -> u_max / i_max , 0 -> u=0 / i=0 [V] / [A]
     :type power: float
     """
     power = max(0.0, min(1.0, power))
@@ -152,7 +121,7 @@ def set_power(ser, power: float):
 
 def read_power(ser):
     """
-    Docstring for read_power
+    Reads power parameter value. Function used for debuging
 
     :param ser: serial for power supply
     :return: volts on power supply
@@ -166,74 +135,20 @@ def read_power(ser):
         print(f"[ERROR] Invalid power data: {line}")
         return None
 
-
-def autotune_pid_step_response(
-        ser_arduino,
-        ser_psu,
-        power_step: float = 0.3,
-        sample_time: float = 1.0,
-        duration: float = 600.0,
-        T_max: float = 80.0,
-):
-    set_power(ser_psu, 0.0)
-    time.sleep(30)
-
-    set_power(ser_psu, power_step)
-    t0 = time.time()
-    data = []
-
-    while time.time() - t0 < duration:
-        temp = read_temp(ser_arduino)
-        if temp is None:
-            time.sleep(0.05)
-            continue
-
-        if temp > T_max:
-            set_power(ser_psu, 0.0)
-            raise RuntimeError("[SAFETY] Temperature exceeded T_max")
-
-        data.append((time.time() - t0, temp))
-        time.sleep(sample_time)
-
-    set_power(ser_psu, 0.0)
-
-    data = np.array(data)
-    t = data[:, 0]
-    T = data[:, 1]
-
-    T0 = T[0]
-    Tend = T[-1]
-    dT = Tend - T0
-
-    if abs(dT) <= 0:
-        raise RuntimeError("[ERROR] Invalid step response (no temperature change)")
-
-    K = abs(dT) / power_step
-    T63 = T0 + 0.63 * dT
-
-    # wybór L i T63_time zależnie od kierunku zmiany temperatury
-    if dT > 0:  # temperatura rośnie
-        L = t[np.where(T > T0 + 0.05 * dT)][0]
-        T63_time = t[np.where(T > T63)][0]
-    else:       # temperatura spada (odwrócony układ)
-        L = t[np.where(T < T0 + 0.05 * dT)][0]
-        T63_time = t[np.where(T < T63)][0]
-
-    Tau = T63_time - L
-
-    # Cohen-Coon
-    Kp = Tau / (K * L)
-    Ti = 2.0 * L
-    Td = 0.5 * L
-
-    Ki = Kp / Ti
-    Kd = Kp * Td
-
-    return Kp, Ki, Kd
-
-
-
 def pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set, logger, running: threading.Event):
+    '''
+    Conducts PID loop while the program is running and "Start" has been selected
+    
+    :param ser_arduino: Port with Arduino (termometer)
+    :param ser_psu: Port with power supply connected to Pelrier element
+    :param Kp: PID proportional term
+    :param Ki: PID integral term
+    :param Kd: PID derivative term
+    :param T_set: temp. value set by user
+    :param logger: data storage and handling
+    :param running: flag for starting PID loop
+    :type running: threading.Event
+    '''
     pid = PID(-Kp, -Ki, -Kd, setpoint=T_set)
     pid.sample_time = 1
     pid.output_limits = (0, 1)
@@ -260,15 +175,42 @@ def pid_loop(ser_arduino, ser_psu, Kp, Ki, Kd, T_set, logger, running: threading
 
 
 
+def init_hardware():
+    """
+    Hardware (Arduino, power supply) set up. Connecting ports.
+    Note: before use make sure both arduono nad power supply are connected via right ports.
+    """
+    ARDUINO_PORT = "COM11"
+    check_serial_port(ARDUINO_PORT)
+    PSU_PORT = "COM15"
+    check_serial_port(PSU_PORT)
 
+    ser_arduino = setup_arduino(ARDUINO_PORT)
+    ser_psu = setup_power_supp(PSU_PORT)
+    return ser_arduino, ser_psu
+
+def shut_down_hardware(ser_arduino, ser_psu):
+    """
+    Hardware safe shut down. Setting power to 0, turning fan off, disconnecting ports.
+    
+    :param ser_arduino: Port with Arduino
+    :param ser_psu: Port with power supply (Peltier)
+    """
+    try:
+        set_power(ser_psu, 0)
+    except Exception:
+        pass
+    ser_arduino.write("F0".encode())
+    close_port_connection(ser_arduino)
+    close_port_connection(ser_psu)
 
 
 ### COLLECTING DATA ###
 
 class DataLogger:
-    """
-    Docstring for DataLogger
-    """
+    '''
+    Class for data storage (temp. and power level) and handling (saving to a file).
+    '''
 
     def __init__(self):
         self.time_log = []
@@ -294,24 +236,7 @@ class DataLogger:
                 writer.writerow(row)
 
 
-def init_hardware():
-    ARDUINO_PORT = "COM11"
-    check_serial_port(ARDUINO_PORT)
-    PSU_PORT = "COM15"
-    check_serial_port(PSU_PORT)
 
-    ser_arduino = setup_arduino(ARDUINO_PORT)
-    ser_psu = setup_power_supp(PSU_PORT)
-    return ser_arduino, ser_psu
-
-def shut_down_hardware(ser_arduino, ser_psu):
-    try:
-        set_power(ser_psu, 0)
-    except Exception:
-        pass
-    ser_arduino.write("F0".encode())
-    close_port_connection(ser_arduino)
-    close_port_connection(ser_psu)
 
 
 
